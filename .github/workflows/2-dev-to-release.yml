@@ -1,0 +1,153 @@
+name: "2 - [DEV] Build and Deploy"
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: rds-dev
+  cancel-in-progress: false
+
+env:
+  TFVARS: inventories/dev/terraform.tfvars
+
+jobs:
+  Terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    # criar/destruir rds demora
+    timeout-minutes: 45
+    environment: dev
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-terraform-dev
+          aws-region: us-east-1
+
+      - name: Read flags from tfvars
+        id: flags
+        run: |
+          DB_IDENTIFIER=$(grep -E '^db_identifier\s*=' $TFVARS | awk -F '=' '{gsub(/[" ]/, "", $2); print $2}')
+          DESTROY=$(grep -E '^destroy\s*=' $TFVARS | awk -F '=' '{gsub(/[[:space:]]/, "", $2); print $2}')
+          echo "DB_IDENTIFIER=$DB_IDENTIFIER" >> $GITHUB_OUTPUT
+          echo "DESTROY=$DESTROY" >> $GITHUB_OUTPUT
+          echo "DB_IDENTIFIER=$DB_IDENTIFIER DESTROY=$DESTROY"
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=g52-terraform-state-dev-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="key=dev/${{ steps.flags.outputs.DB_IDENTIFIER }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: github.event_name == 'pull_request'
+        run: terraform plan -var-file=$TFVARS
+
+      - name: Terraform Destroy
+        if: steps.flags.outputs.DESTROY == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: terraform destroy -auto-approve -var-file=$TFVARS
+
+      - name: Terraform Apply
+        if: steps.flags.outputs.DESTROY != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: terraform apply -auto-approve -var-file=$TFVARS
+
+  create:
+    name: Create PR
+    needs: Terraform
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: version
+        run: |
+          git fetch --all
+
+          LAST=$(git for-each-ref \
+            --format='%(refname:short)' \
+            refs/remotes/origin/release/v* \
+            | sed 's|origin/release/v||' \
+            | sort -V \
+            | tail -n 1)
+
+          if [ -z "$LAST" ]; then
+            NEXT="0.0.1"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST"
+            PATCH=$((PATCH + 1))
+            NEXT="$MAJOR.$MINOR.$PATCH"
+          fi
+
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse release branch
+        id: branch
+        run: |
+          VERSION="${{ steps.version.outputs.next_version }}"
+          BRANCH="release/v$VERSION"
+
+          git fetch --all
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Branch already exists. Reusing."
+          else
+            git checkout main
+            git pull origin main
+            git checkout -b "$BRANCH"
+            git push origin "$BRANCH"
+          fi
+
+          echo "branch_name=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR (develop -> release)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.branch.outputs.branch_name }}"
+
+          EXISTS=$(gh pr list \
+            --head develop \
+            --base "$BRANCH" \
+            --state open \
+            --json number \
+            --jq 'length')
+
+          if [ "$EXISTS" -eq "0" ]; then
+            gh pr create \
+              --base "$BRANCH" \
+              --head develop \
+              --title "Release $BRANCH" \
+              --body "Promoting develop into $BRANCH"
+          else
+            echo "PR already exists. Skipping."
+          fi

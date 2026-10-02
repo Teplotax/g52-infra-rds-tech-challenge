@@ -1,0 +1,66 @@
+name: "3 - [HOM] Promote & Deploy"
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'release/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  Create:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Extract release branch
+        id: extract
+        run: |
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          HEAD_BRANCH="${{ github.event.pull_request.head.ref }}"
+
+          echo "HEAD: $HEAD_BRANCH"
+          echo "BASE: $BASE_BRANCH"
+
+          if [ "$HEAD_BRANCH" != "develop" ]; then
+            echo "Not a develop → release PR. Skipping."
+            exit 0
+          fi
+
+          echo "release_branch=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR (release → main)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_BRANCH="${{ steps.extract.outputs.release_branch }}"
+
+          if [ -z "$RELEASE_BRANCH" ]; then
+            echo "No release branch found. Skipping."
+            exit 0
+          fi
+
+          echo "Creating PR: $RELEASE_BRANCH → main"
+
+          EXISTS=$(gh pr list \
+            --head "$RELEASE_BRANCH" \
+            --base main \
+            --state open \
+            --json number \
+            --jq 'length')
+
+          if [ "$EXISTS" -eq "0" ]; then
+            gh pr create \
+              --base main \
+              --head "$RELEASE_BRANCH" \
+              --title "Promote $RELEASE_BRANCH → main" \
+              --body "Automated promotion of $RELEASE_BRANCH into main"
+          else
+            echo "PR already exists. Skipping."
+          fi
