@@ -1,7 +1,7 @@
 environment   = "dev"
 db_identifier = "g52-rds-tech-challenge"
 aws_region    = "us-east-1"
-destroy       = false
+destroy       = true
 
 # mesmas subnets do eks (precisa de 2 AZs)
 subnet_ids = ["subnet-0f8545b2a7f5196a2", "subnet-0f211081d9ccab538"]
