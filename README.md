@@ -2,6 +2,8 @@
 
 Terraform do banco de dados gerenciado do Tech Challenge (Grupo 52): **Amazon RDS for PostgreSQL 16**, usado pela aplicação principal (EKS) e pela Lambda de autenticação por CPF.
 
+**Modelo de dados:** o diagrama ER, a explicação dos relacionamentos, a justificativa da escolha do PostgreSQL/RDS e os ajustes feitos no modelo estão em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md).
+
 ## Arquitetura
 
 ```mermaid
