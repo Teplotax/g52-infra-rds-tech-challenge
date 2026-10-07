@@ -1,7 +1,7 @@
 environment   = "hom"
 db_identifier = "g52-rds-tech-challenge-hom"
 aws_region    = "us-east-1"
-destroy       = false
+destroy       = true
 
 subnet_ids = ["subnet-0f8545b2a7f5196a2", "subnet-0f211081d9ccab538"]
 
