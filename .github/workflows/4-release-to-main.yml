@@ -1,0 +1,55 @@
+name: "3 - [HOM] Deploy & Promote"
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - 'release/**'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: Deploy hom
+    # só o merge develop -> release/* sobe hom
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: hom
+      ref: ${{ github.event.pull_request.base.ref }}
+    secrets: inherit
+
+  create:
+    name: Create PR
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create PR (release -> main)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+
+          EXISTS=$(gh pr list \
+            --head "$RELEASE_BRANCH" \
+            --base main \
+            --state open \
+            --json number \
+            --jq 'length')
+
+          if [ "$EXISTS" -eq "0" ]; then
+            gh pr create \
+              --base main \
+              --head "$RELEASE_BRANCH" \
+              --title "Promote $RELEASE_BRANCH → main" \
+              --body "Automated promotion of $RELEASE_BRANCH into main"
+          else
+            echo "PR already exists. Skipping."
+          fi

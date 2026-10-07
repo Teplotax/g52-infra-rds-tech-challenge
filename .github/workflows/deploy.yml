@@ -1,0 +1,79 @@
+name: "Deploy"
+
+# chamado pelos workflows de dev (develop), hom (release/*) e prod (main)
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      ref:
+        type: string
+        default: ""
+      plan_only:
+        type: boolean
+        default: false
+
+jobs:
+  Terraform:
+    name: Terraform (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ inputs.environment }}
+
+    concurrency:
+      group: rds-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    env:
+      TFVARS: inventories/${{ inputs.environment }}/terraform.tfvars
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-terraform-dev
+          aws-region: us-east-1
+
+      - name: Read flags from tfvars
+        id: flags
+        run: |
+          NAME=$(grep -E '^db_identifier\s*=' $TFVARS | awk -F '=' '{gsub(/[" ]/, "", $2); print $2}')
+          DESTROY=$(grep -E '^destroy\s*=' $TFVARS | awk -F '=' '{gsub(/[[:space:]]/, "", $2); print $2}')
+          echo "NAME=$NAME" >> $GITHUB_OUTPUT
+          echo "DESTROY=$DESTROY" >> $GITHUB_OUTPUT
+          echo "ENV=${{ inputs.environment }} NAME=$NAME DESTROY=$DESTROY"
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=g52-terraform-state-dev-${{ vars.AWS_ACCOUNT_ID }}" \
+            -backend-config="key=${{ inputs.environment }}/${{ steps.flags.outputs.NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.plan_only
+        run: terraform plan -var-file=$TFVARS
+
+      - name: Terraform Destroy
+        if: ${{ !inputs.plan_only && steps.flags.outputs.DESTROY == 'true' }}
+        run: terraform destroy -auto-approve -var-file=$TFVARS
+
+      - name: Terraform Apply
+        if: ${{ !inputs.plan_only && steps.flags.outputs.DESTROY != 'true' }}
+        run: terraform apply -auto-approve -var-file=$TFVARS
