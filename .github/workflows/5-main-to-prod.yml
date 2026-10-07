@@ -1,0 +1,19 @@
+name: "5 - [PROD] Deploy"
+
+# merge da release na main sobe prod (com destroy = true no tfvars só derruba/não cria nada)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy prod
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+    secrets: inherit
