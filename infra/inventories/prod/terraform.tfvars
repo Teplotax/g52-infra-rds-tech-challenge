@@ -1,5 +1,5 @@
-environment   = "dev"
-db_identifier = "g52-rds-tech-challenge-dev"
+environment   = "prod"
+db_identifier = "g52-rds-tech-challenge-prod"
 aws_region    = "us-east-1"
 destroy       = true
 
