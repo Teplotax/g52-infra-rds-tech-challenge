@@ -9,14 +9,14 @@ Terraform do banco de dados gerenciado do Tech Challenge (Grupo 52): **Amazon RD
 ```mermaid
 flowchart LR
     subgraph vpc["VPC (subnets do EKS, 2 AZs)"]
-        subgraph clients["SG g52-rds-tech-challenge-clients"]
+        subgraph clients["SG g52-rds-tech-challenge-{env}-clients"]
             nodes["Nós do EKS<br/>(app tech-challenge-ms)"]
-            lambda["Lambda g52-lambda-auth"]
+            lambda["Lambda g52-lambda-auth-{env}"]
         end
         rds[("RDS PostgreSQL 16<br/>g52-rds-tech-challenge<br/>privado, criptografado")]
     end
 
-    sm["Secrets Manager<br/>g52-rds-tech-challenge/credentials"]
+    sm["Secrets Manager<br/>g52-rds-tech-challenge-{env}/credentials"]
     cw["CloudWatch Logs<br/>/aws/rds/instance/.../postgresql"]
 
     nodes -- "5432 (TLS)" --> rds
@@ -74,7 +74,7 @@ Para destruir, use a ordem inversa: o SG `clients` não pode ser apagado enquant
 cd infra
 terraform init -reconfigure \
   -backend-config="bucket=g52-terraform-state-dev-<account-id>" \
-  -backend-config="key=dev/g52-rds-tech-challenge/terraform.tfstate" \
+  -backend-config="key=dev/g52-rds-tech-challenge-dev/terraform.tfstate" \
   -backend-config="region=us-east-1"
 
 terraform plan  -var-file=inventories/dev/terraform.tfvars
@@ -84,7 +84,7 @@ terraform apply -var-file=inventories/dev/terraform.tfvars
 Para pegar as credenciais:
 
 ```bash
-aws secretsmanager get-secret-value --secret-id g52-rds-tech-challenge/credentials --query SecretString --output text
+aws secretsmanager get-secret-value --secret-id g52-rds-tech-challenge-dev/credentials --query SecretString --output text
 ```
 
 ## Pipeline CI/CD
@@ -96,10 +96,24 @@ feature/** -> develop -> release/vX.X.X -> main
 | Workflow | Gatilho | Ação |
 |---|---|---|
 | `1-feature-to-dev.yml` | Push em `feature/**` | Abre PR automático para `develop` |
-| `2-dev-to-release.yml` | Push/PR em `develop` | `terraform plan` (PR) ou `apply/destroy` (push); cria branch e PR `release/vX.X.X` |
-| `4-release-to-main.yml` | PR fechado em `release/**` | Abre PR automático da release para `main` |
+| `2-dev-to-release.yml` | Push/PR em `develop` | Deploy em **dev**: `terraform plan` (PR) ou `apply/destroy` (push); cria branch e PR `release/vX.X.X` |
+| `4-release-to-main.yml` | Merge em `release/**` | Deploy em **hom** e abre PR da release para `main` |
+| `5-main-to-prod.yml` | Push em `main` | Deploy em **prod** |
+| `deploy.yml` | Chamado pelos anteriores | Deploy reutilizável, parametrizado por ambiente |
 
-A autenticação na AWS é via OIDC com o role `github-actions-terraform-dev`. A única configuração do repositório é a variável `AWS_ACCOUNT_ID`.
+A autenticação na AWS é via OIDC com o role `github-actions-terraform-dev`.
+
+### Ambientes
+
+| Ambiente | Branch | Quando sobe | `destroy` padrão | Configuração |
+|---|---|---|---|---|
+| **dev** | `develop` | Push em `develop` | `true` (sobe só quando precisa) | `infra/inventories/dev` (`g52-rds-tech-challenge-dev`) |
+| **hom** | `release/*` | Merge do PR `develop` → `release/*` | `false` (fica no ar) | `infra/inventories/hom` (`g52-rds-tech-challenge-hom`) |
+| **prod** | `main` | Merge do PR `release/*` → `main` | `true` (ligado só para demonstração) | `infra/inventories/prod` (`g52-rds-tech-challenge-prod`) |
+
+O deploy fica no workflow reutilizável `deploy.yml`, chamado pelos três gatilhos com o ambiente como parâmetro. Cada ambiente usa o ambiente de mesmo nome no GitHub (`Settings → Environments`), com a variável `AWS_ACCOUNT_ID`. O state do Terraform fica no bucket `g52-terraform-state-dev-<account>`, na chave `<ambiente>/...`.
+
+A branch `main` é protegida: não aceita push direto, e o merge só acontece por Pull Request.
 
 ## Tecnologias
 

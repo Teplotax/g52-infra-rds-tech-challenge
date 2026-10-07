@@ -1,4 +1,4 @@
-name: "3 - [HOM] Promote & Deploy"
+name: "3 - [HOM] Deploy & Promote"
 
 on:
   pull_request:
@@ -7,46 +7,35 @@ on:
       - 'release/**'
 
 permissions:
+  id-token: write
   contents: read
   pull-requests: write
 
 jobs:
-  Create:
-    if: github.event.pull_request.merged == true
+  deploy:
+    name: Deploy hom
+    # só o merge develop -> release/* sobe hom
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'develop'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: hom
+      ref: ${{ github.event.pull_request.base.ref }}
+    secrets: inherit
+
+  create:
+    name: Create PR
+    needs: deploy
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Extract release branch
-        id: extract
-        run: |
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          HEAD_BRANCH="${{ github.event.pull_request.head.ref }}"
-
-          echo "HEAD: $HEAD_BRANCH"
-          echo "BASE: $BASE_BRANCH"
-
-          if [ "$HEAD_BRANCH" != "develop" ]; then
-            echo "Not a develop → release PR. Skipping."
-            exit 0
-          fi
-
-          echo "release_branch=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
-
-      - name: Create PR (release → main)
+      - name: Create PR (release -> main)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_BRANCH="${{ steps.extract.outputs.release_branch }}"
-
-          if [ -z "$RELEASE_BRANCH" ]; then
-            echo "No release branch found. Skipping."
-            exit 0
-          fi
-
-          echo "Creating PR: $RELEASE_BRANCH → main"
+          RELEASE_BRANCH="${{ github.event.pull_request.base.ref }}"
 
           EXISTS=$(gh pr list \
             --head "$RELEASE_BRANCH" \
