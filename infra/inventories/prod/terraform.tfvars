@@ -6,7 +6,7 @@ destroy       = true
 subnet_ids = ["subnet-0f8545b2a7f5196a2", "subnet-0f211081d9ccab538"]
 
 engine_version          = "16"
-instance_class          = "db.t4g.micro"
+instance_class          = "db.t3.micro"
 allocated_storage       = 20
 max_allocated_storage   = 50
 db_name                 = "techchallenge"
