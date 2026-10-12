@@ -72,7 +72,13 @@ jobs:
 
       - name: Terraform Destroy
         if: ${{ !inputs.plan_only && steps.flags.outputs.DESTROY == 'true' }}
-        run: terraform destroy -auto-approve -var-file=$TFVARS
+        # ambiente já destruído: state vazio, nada a fazer (e os data sources nem existem mais)
+        run: |
+          if [ -z "$(terraform state list)" ]; then
+            echo "state vazio, nada pra destruir"
+          else
+            terraform destroy -auto-approve -var-file=$TFVARS
+          fi
 
       - name: Terraform Apply
         if: ${{ !inputs.plan_only && steps.flags.outputs.DESTROY != 'true' }}
