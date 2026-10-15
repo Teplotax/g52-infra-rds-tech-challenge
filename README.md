@@ -4,6 +4,27 @@ Terraform do banco de dados gerenciado do Tech Challenge (Grupo 52): **Amazon RD
 
 **Modelo de dados:** o diagrama ER, a explicação dos relacionamentos, a justificativa da escolha do PostgreSQL/RDS e os ajustes feitos no modelo estão em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md).
 
+## Links
+
+| | |
+|---|---|
+| Documentação da API (Swagger) | https://teplotax.github.io/doc-api-tech-challenge-v1/ |
+| Collection Postman/Insomnia | Enviada no PDF de entrega, porque contém CPFs de teste do seed |
+| Arquitetura da solução (diagramas, RFCs, ADRs) | [`g52-app-tech-challenge/docs/arquitetura`](https://github.com/Teplotax/g52-app-tech-challenge/tree/main/docs/arquitetura) |
+| Pipelines | [GitHub Actions](https://github.com/Teplotax/g52-infra-rds-tech-challenge/actions) |
+
+### Deploys
+
+Todos os ambientes respondem pelo mesmo API Gateway, com um stage por ambiente:
+
+| Ambiente | URL base | Healthcheck |
+|---|---|---|
+| dev | https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/dev | [`/dev/health`](https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/dev/health) |
+| hom | https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/hom | [`/hom/health`](https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/hom/health) |
+| prod | https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/prod | [`/prod/health`](https://08onkvn4jb.execute-api.us-east-1.amazonaws.com/prod/health) |
+
+Para economizar, os ambientes ficam desligados quando não estão em uso ([ADR-003](https://github.com/Teplotax/g52-app-tech-challenge/blob/main/docs/arquitetura/adrs/ADR-003-ambientes.md)). O healthcheck mostra se um ambiente está no ar.
+
 ## Arquitetura
 
 ```mermaid
@@ -34,7 +55,7 @@ flowchart LR
 
 | Recurso | Descrição |
 |---|---|
-| `aws_db_instance.this` | PostgreSQL 16, `db.t4g.micro`, gp3 20 GB (autoscaling até 50 GB), criptografado, backup automático |
+| `aws_db_instance.this` | PostgreSQL 16, `db.t4g.micro` no dev e `db.t3.micro` em hom/prod (sem capacidade de `t4g` nas AZs usadas), gp3 20 GB (autoscaling até 50 GB), criptografado, backup automático |
 | `aws_db_subnet_group.this` | Subnets das 2 AZs (as mesmas do EKS) |
 | `aws_security_group.rds` / `aws_security_group.clients` | Acesso ao banco restrito a quem anexar o SG `clients` |
 | `aws_db_parameter_group.this` | `rds.force_ssl` e `log_min_duration_statement` |
@@ -87,7 +108,7 @@ Para pegar as credenciais:
 aws secretsmanager get-secret-value --secret-id g52-rds-tech-challenge-dev/credentials --query SecretString --output text
 ```
 
-## Pipeline CI/CD
+## Deploy (CI/CD)
 
 ```
 feature/** -> develop -> release/vX.X.X -> main
@@ -95,11 +116,11 @@ feature/** -> develop -> release/vX.X.X -> main
 
 | Workflow | Gatilho | Ação |
 |---|---|---|
-| `1-feature-to-dev.yml` | Push em `feature/**` | Abre PR automático para `develop` |
-| `2-dev-to-release.yml` | Push/PR em `develop` | Deploy em **dev**: `terraform plan` (PR) ou `apply/destroy` (push); cria branch e PR `release/vX.X.X` |
-| `4-release-to-main.yml` | Merge em `release/**` | Deploy em **hom** e abre PR da release para `main` |
-| `5-main-to-prod.yml` | Push em `main` | Deploy em **prod** |
-| `deploy.yml` | Chamado pelos anteriores | Deploy reutilizável, parametrizado por ambiente |
+| `1 - [FEAT] Build & PR` | Push em `feature/**` | Abre PR automático para `develop` |
+| `2 - [DEV] Build and Deploy` | Merge em `develop` | Deploy em **dev** (`terraform apply` ou `destroy`); cria a branch e o PR `release/vX.X.X` |
+| `3 - [HOM] Deploy & Promote` | Merge do PR em `release/**` | Deploy em **hom** e abre o PR da release para `main` |
+| `5 - [PROD] Deploy` | Merge em `main` | Deploy em **prod** |
+| `Deploy` (`deploy.yml`) | Chamado pelos anteriores | Deploy reutilizável, parametrizado por ambiente |
 
 A autenticação na AWS é via OIDC com o role `github-actions-terraform-dev`.
 
@@ -118,3 +139,15 @@ A branch `main` é protegida: não aceita push direto, e o merge só acontece po
 ## Tecnologias
 
 Terraform (AWS provider 6), Amazon RDS for PostgreSQL, Secrets Manager, CloudWatch Logs, GitHub Actions.
+
+## Repositórios do projeto
+
+| Repositório | Conteúdo |
+|---|---|
+| [g52-app-tech-challenge](https://github.com/Teplotax/g52-app-tech-challenge) | Aplicação Spring Boot, manifestos Kubernetes e documentação de arquitetura |
+| [g52-lambda-tech-challenge](https://github.com/Teplotax/g52-lambda-tech-challenge) | Function Serverless de autenticação (CPF e `client_credentials`) e Lambda Authorizer |
+| [g52-infra-eks-tech-challenge](https://github.com/Teplotax/g52-infra-eks-tech-challenge) | Cluster EKS, ECR, add-ons e observabilidade (New Relic) |
+| **g52-infra-rds-tech-challenge** (este) | Banco gerenciado (RDS PostgreSQL) e modelo de dados |
+| [g52-infra-gateway-tech-challenge](https://github.com/Teplotax/g52-infra-gateway-tech-challenge) | REST API do API Gateway e roles da conta |
+| [g52-api-tech-challenge-v1-ext](https://github.com/Teplotax/g52-api-tech-challenge-v1-ext) | Contrato OpenAPI importado no API Gateway (stages dev/hom/prod) |
+| [doc-api-tech-challenge-v1](https://github.com/Teplotax/doc-api-tech-challenge-v1) | Swagger publicado no GitHub Pages |
