@@ -8,7 +8,7 @@ Terraform do banco de dados gerenciado do Tech Challenge (Grupo 52): **Amazon RD
 
 | | |
 |---|---|
-| Documentação da API (Swagger) | https://teplotax.github.io/doc-api-tech-challenge-v1/ |
+| Documentação da API (Swagger) | https://teplotax.github.io/doc-api-g52-tech-challenge-v1/ |
 | Collection Postman/Insomnia | Enviada no PDF de entrega, porque contém CPFs de teste do seed |
 | Arquitetura da solução (diagramas, RFCs, ADRs) | [`g52-app-tech-challenge/docs/arquitetura`](https://github.com/Teplotax/g52-app-tech-challenge/tree/main/docs/arquitetura) |
 | Pipelines | [GitHub Actions](https://github.com/Teplotax/g52-infra-rds-tech-challenge/actions) |
@@ -150,4 +150,4 @@ Terraform (AWS provider 6), Amazon RDS for PostgreSQL, Secrets Manager, CloudWat
 | **g52-infra-rds-tech-challenge** (este) | Banco gerenciado (RDS PostgreSQL) e modelo de dados |
 | [g52-infra-gateway-tech-challenge](https://github.com/Teplotax/g52-infra-gateway-tech-challenge) | REST API do API Gateway e roles da conta |
 | [g52-api-tech-challenge-v1-ext](https://github.com/Teplotax/g52-api-tech-challenge-v1-ext) | Contrato OpenAPI importado no API Gateway (stages dev/hom/prod) |
-| [doc-api-tech-challenge-v1](https://github.com/Teplotax/doc-api-tech-challenge-v1) | Swagger publicado no GitHub Pages |
+| [doc-api-g52-tech-challenge-v1](https://github.com/Teplotax/doc-api-g52-tech-challenge-v1) | Swagger publicado no GitHub Pages |
